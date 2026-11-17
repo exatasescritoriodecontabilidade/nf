@@ -106,15 +106,17 @@
         <div class="opcoes" id="tipo">
           <button type="button" id="t-cnpj" data-v="CNPJ" aria-pressed="false">Empresa (CNPJ)</button>
           <button type="button" id="t-pf" data-v="PF" aria-pressed="false">Pessoa Física (CPF)</button>
+          <button type="button" id="t-sem" data-v="SEM" aria-pressed="false" hidden>Sem tomador</button><!-- liberar: tirar o "hidden" -->
         </div>
       </div>
 
       <div id="campos" style="display:flex;flex-direction:column;gap:16px" hidden>
-        <div class="grupo">
+        <div class="aviso" id="semAviso" hidden>Nota <b>sem tomador</b>: não informe CPF, CNPJ, nome nem endereço. O ISS não é retido.</div>
+        <div class="grupo" id="g-doc">
           <label for="doc" id="l-doc">CNPJ do seu cliente</label>
           <input id="doc" inputmode="numeric" autocomplete="off">
         </div>
-        <div class="grupo">
+        <div class="grupo" id="g-nome">
           <label for="nome" id="l-nome">Razão social do seu cliente</label>
           <div class="dica" id="d-nome">Nome que está no cartão CNPJ.</div>
           <input id="nome" autocomplete="off">
@@ -146,7 +148,7 @@
           <select id="comp"></select>
           <div class="aviso" id="compAviso" hidden>⚠️ Competência do mês anterior: este pedido passa por análise do Departamento Fiscal antes da emissão e pode levar mais tempo.</div>
         </div>
-        <div class="grupo">
+        <div class="grupo" id="g-iss">
           <span class="rot">O ISS será retido pelo seu cliente?</span>
           <div class="opcoes" id="iss">
             <button type="button" id="i-nao" data-v="Não" aria-pressed="false">Não</button>
@@ -159,7 +161,7 @@
           <textarea id="obs" style="min-height:70px"></textarea>
         </div>
 
-        <label class="lembrar" for="lembrar"><input type="checkbox" id="lembrar" checked> Lembrar este cliente neste aparelho, para pedir de novo mais rápido</label>
+        <label class="lembrar" for="lembrar" id="g-lembrar"><input type="checkbox" id="lembrar" checked> Lembrar este cliente neste aparelho, para pedir de novo mais rápido</label>
 
         <div class="msg" id="erro" role="alert" hidden></div>
         <button class="enviar" id="btEnviar" type="submit">Enviar solicitação</button>
@@ -196,13 +198,14 @@
   var CAMPO = {
     codigo: 'entry.1380049735',
     tipo:   'entry.201519064',
-    CNPJ: { doc:'entry.1330013540', nome:'entry.530419040', valor:'entry.534041392', descricao:'entry.460696047',
-            cidade:'entry.772396109', competencia:'entry.63426251', iss:'entry.1614860731', obs:'entry.993065556' },
+    CNPJ: { doc:'entry.482375727', nome:'entry.958027698', valor:'entry.739495688', descricao:'entry.300738620',
+            cidade:'entry.1678059833', competencia:'entry.918017477', iss:'entry.28421684', obs:'entry.2113895049' },   // seção Empresa refeita em 16/11/2026
     PF:   { nome:'entry.1926883141', doc:'entry.118405013', endereco:'entry.1837893502', valor:'entry.1402457414',
-            descricao:'entry.988420492', cidade:'entry.178508163', competencia:'entry.522822864', iss:'entry.2080170436', obs:'entry.170795305' }
+            descricao:'entry.988420492', cidade:'entry.178508163', competencia:'entry.522822864', iss:'entry.2080170436', obs:'entry.170795305' },
+    SEM:  { valor:'entry.534041392', descricao:'entry.460696047', cidade:'entry.772396109', competencia:'entry.63426251', obs:'entry.993065556' }   // seção Sem tomador (perguntas antigas do CNPJ)
   };
-  var TIPO_TEXTO = { CNPJ: 'CNPJ  (Empresa)', PF: 'PF (Pessoa Física)' };   // igual às opções do Forms
-  var PAGINAS = { CNPJ: '0,1,3', PF: '0,2,3' };                             // caminho pelas seções do Forms
+  var TIPO_TEXTO = { CNPJ: 'CNPJ  (Empresa)', PF: 'PF (Pessoa Física)', SEM: 'Sem tomador' };   // igual às opções do Forms
+  var PAGINAS = { CNPJ: '0,1,3', PF: '0,2,3', SEM: '0,4,3' };   // caminho pelas seções do Forms (SEM: conferir depois de criar a seção)
 
   var $ = function (id) { return document.getElementById(id); };
   var estado = { tipo: '', iss: '' };
@@ -322,8 +325,10 @@
     });
   }
   function mostrarTipo(v) {
-    var pf = v === 'PF';
+    var pf = v === 'PF', sem = v === 'SEM';
     $('campos').hidden = false;
+    $('semAviso').hidden = !sem; $('g-doc').hidden = sem; $('g-nome').hidden = sem; $('g-iss').hidden = sem; $('g-lembrar').hidden = sem;
+    if (sem) { $('doc').value = ''; $('nome').value = ''; $('endereco').value = ''; marcarBotao('iss', 'iss', 'Não'); }
     $('l-doc').textContent = pf ? 'CPF do seu cliente' : 'CNPJ do seu cliente';
     $('l-nome').textContent = pf ? 'Nome completo do seu cliente' : 'Razão social do seu cliente';
     $('d-nome').textContent = pf ? 'Como está no documento.' : 'Nome que está no cartão CNPJ.';
@@ -436,16 +441,18 @@
     ev.preventDefault(); $('erro').hidden = true;
     var tipo = estado.tipo, doc = $('doc').value.replace(/\D/g, ''), v = valorNum($('valor').value);
     var falta = [], msgs = [];
-    if (!tipo) { falta.push('tipo'); msgs.push('Escolha se o seu cliente é Empresa ou Pessoa Física.'); }
+    var sem = tipo === 'SEM';
+    if (!tipo) { falta.push('tipo'); msgs.push('Escolha se o seu cliente é Empresa, Pessoa Física ou Sem tomador.'); }
     if (tipo === 'CNPJ' && !cnpjOk(doc)) { falta.push('doc'); msgs.push('CNPJ do seu cliente inválido.'); }
     if (tipo === 'PF' && !cpfOk(doc)) { falta.push('doc'); msgs.push('CPF do seu cliente inválido.'); }
-    if (limpo($('nome').value).length < 3) falta.push('nome');
+    if (!sem && limpo($('nome').value).length < 3) falta.push('nome');
     if (tipo === 'PF' && limpo($('endereco').value).length < 8) falta.push('endereco');
     if (!(v > 0)) falta.push('valor');
     if (limpo($('descricao').value).length < 5) falta.push('descricao');
     cid.value = normalizarCidade(limpo(cid.value));
     if (limpo(cid.value).length < 3) falta.push('cidade');
     else if (!cidadeValida(cid.value)) { falta.push('cidade'); msgs.push('Escolha a cidade na lista que aparece ao digitar.'); }
+    if (sem) estado.iss = 'Não';
     if (!estado.iss) falta.push('iss');
     marcar(falta);
     if (falta.length) { erro(msgs.length ? msgs.join(' ') + (falta.length > msgs.length ? ' Confira também os campos destacados.' : '') : 'Preencha os campos destacados.'); return; }
@@ -453,14 +460,13 @@
     var c = CAMPO[tipo], dados = new URLSearchParams();
     dados.append(CAMPO.codigo, COD);
     dados.append(CAMPO.tipo, TIPO_TEXTO[tipo]);
-    dados.append(c.doc, doc);
-    dados.append(c.nome, limpo($('nome').value));
+    if (!sem) { dados.append(c.doc, doc); dados.append(c.nome, limpo($('nome').value)); }
     if (tipo === 'PF') dados.append(c.endereco, limpo($('endereco').value));
     dados.append(c.valor, valorBR(v));
     dados.append(c.descricao, $('descricao').value.trim());
     dados.append(c.cidade, limpo($('cidade').value));
     dados.append(c.competencia, comp.value);
-    dados.append(c.iss, estado.iss);
+    if (!sem) dados.append(c.iss, estado.iss);
     var obs = $('obs').value.trim();
     if (comp.value !== COMP_ATUAL) obs = '[COMPETÊNCIA ANTERIOR - ANALISAR] ' + obs;   // marca para a conferência
     if (obs) dados.append(c.obs, obs.trim());
@@ -478,7 +484,7 @@
           ? '⏰ Pedido recebido após as 14h (ou fora de dia útil): a emissão será no próximo dia útil.'
           : '⏰ Pedido recebido até as 14h: a emissão será hoje.';
         ultimo = registro;
-        if ($('lembrar').checked) lembrar(registro);
+        if (sem) { var mm = memoria(); mm.cidade = registro.cidade; gravarMemoria(mm); } else if ($('lembrar').checked) lembrar(registro);
         $('f').hidden = true; $('ok').hidden = false; window.scrollTo(0, 0);
       })
       .catch(function () { erro('Não foi possível enviar. Confira sua internet e tente de novo.'); })
